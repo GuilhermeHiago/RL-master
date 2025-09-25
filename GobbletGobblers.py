@@ -15,13 +15,14 @@ class GlobbletGobblers:
         self.board[1].append(13)
         self.board[0].append(12)
         self.board[4].append(11)
+        self.board[8].append(13)
         pass
 
     def get_state(self):
         return tuple(self.board)
     
     def is_game_over(self):
-        if self.check_win(1) or self.check_win(2) or self.is_draw():
+        if self.check_win(10) or self.check_win(20): # or self.is_draw()
             return True
         return False
     
@@ -31,7 +32,7 @@ class GlobbletGobblers:
                           (0, 3, 6), (1, 4, 7), (2, 5, 8),
                           (0, 4, 8), (2, 4, 6)]
         
-        return any(all(self.board[i] != 0 and self.board[i] < player + 5 for i in wc) for wc in win_conditions)
+        return any(all(self.board[i][-1] != 0 and self.board[i][-1] < player + 5 for i in wc) for wc in win_conditions)
     
     def get_available_actions(self, player):
         # moves from initial placement
@@ -73,6 +74,23 @@ class GlobbletGobblers:
 
         return placement_moves + move_moves
     
+    def make_move(self, action, player):
+
+        # action <p, orig_pos, targ_pos>
+        if action[0] == 'm':
+           if self.board[action[1]][-1] >> 3 == player >> 3:
+               if self.board[action[1]][-1] % 10 > self.board[action[2]][-1] % 10:
+                   piece = self.board[action[1]].pop()
+                   self.board[action[2]].append(piece)
+                   return True
+        # action <p, piece, pos>
+        elif action[0] == 'p':
+            if action[1] >> 3 == player >> 3:
+                if action[1] % 10 > self.board[action[2]][-1] % 10:
+                    self.board[action[2]].append(action[1])
+                    return True
+        return False
+
     def reset(self):
         self.board = [[0]] * 9
         self.player1_pieces = [11, 11, 12, 12, 13, 13]
@@ -80,3 +98,8 @@ class GlobbletGobblers:
 
 game = GlobbletGobblers()
 print(game.get_available_actions(10))
+print(game.is_game_over())
+
+print(game.board)
+game.make_move(("p", 11, 5), 10)
+print(game.board)
