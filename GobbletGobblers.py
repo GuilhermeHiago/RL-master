@@ -14,9 +14,36 @@ class GlobbletGobblers:
 
         self.player_pieces = {self.player1: [11, 11, 12, 12, 13, 13], 
                               self.player2: [21, 21, 22, 22, 23, 23]}
+        
+        self.current_player = self.player1
         pass
 
     def get_state(self) -> tuple:
+        # state = [x[-1] for x in self.board]
+
+        state = [[-1, -1, -1, -1] for _ in range(9)]
+
+        # copy board pieces in stack positions
+        for i in range(len(self.board)):
+            piece_stack = self.board[i]
+            for p in range(len(piece_stack)):
+                state[i][p] = piece_stack[p]
+            
+            # convert stack to tuple
+            state[i] = tuple(state[i])
+
+        state.append(self.player_pieces[self.player1].count(11))
+        state.append(self.player_pieces[self.player1].count(12))
+        state.append(self.player_pieces[self.player1].count(13))
+        state.append(self.player_pieces[self.player2].count(21))
+        state.append(self.player_pieces[self.player2].count(22))
+        state.append(self.player_pieces[self.player2].count(23))
+
+        state.append(self.current_player)
+        
+        return tuple(state)
+
+    def get_state_old1(self) -> tuple:
         # add only the top pieces of the board
         state = [x[-1] for x in self.board]
 
@@ -88,20 +115,22 @@ class GlobbletGobblers:
     
     def make_move(self, action, player):
         if action in self.get_available_actions(player):
-            # action <p, orig_pos, targ_pos>
+            # action <m, orig_pos, targ_pos>
             if action[0] == 'm':
                 if self.board[action[1]][-1] >> 3 == player >> 3:
                     if self.board[action[1]][-1] % 10 > self.board[action[2]][-1] % 10:
                         piece = self.board[action[1]].pop()
                         self.board[action[2]].append(piece)
+                        self.current_player = self.player1 if self.current_player == self.player2 else self.player2
                         return True
-            # action <p, piece, pos>
+            # action <p, piece, targ_pos>
             elif action[0] == 'p':
                 # if is piece from right player and it has this piece
                 if action[1] >> 3 == player >> 3 and action[1] in self.player_pieces[player]:
                     if action[1] % 10 > self.board[action[2]][-1] % 10:
                         self.board[action[2]].append(action[1])
                         self.player_pieces[player].remove(action[1])
+                        self.current_player = self.player1 if self.current_player == self.player2 else self.player2
                         return True
                     
         print("Falhou movimento")
@@ -200,14 +229,29 @@ def load_model(filename="q_table.pkl"):
         print(f"Arquivo {filename} não encontrado. Iniciando do zero.")
         return None
 
+class RandomAgent():
+    def choose_action(self, state, available_actions):
+        return random.choice(available_actions)
+
 # --- Loop de Treinamento ---
-def train(agent, total_episodes=20000):
+def train(agent, total_episodes=20000, debug=False):
     game = GlobbletGobblers()
-    
+    oponent_agent = RandomAgent()
+    last_table_update = 0
+
     for episode in range(total_episodes):
         game.reset()
         is_game_over = False
         
+        if episode == total_episodes // 2:
+            agent = QLearningAgent(q_table=agent.q_table.copy())
+            last_table_update = 0
+        if episode >= total_episodes // 2 and last_table_update >= 10000:
+            last_table_update = 0
+            agent = QLearningAgent(q_table=agent.q_table.copy())
+
+        last_table_update += 1
+
         while not is_game_over:
             state = game.get_state()
             available_actions = game.get_available_actions(game.player1)
@@ -215,17 +259,30 @@ def train(agent, total_episodes=20000):
             # Agent's turn (Player 1)
             action = agent.choose_action(state, available_actions)
             game.make_move(action, game.player1)
+
             
-            # game.draw_board()
+            if debug:
+                print("P1 action: ", action)
+                game.draw_board()
 
             reward = 0
+            
+            # case is placement move and covers other player piece
+            if 'p' == action[0]: 
+                # -2 because action already made (player 1 piece already on top)
+                if game.board[action[2]][-2] >> 3 == game.player2 >> 3:
+                    reward = 0.1
+                if game.board[action[2]][-2] >> 3 == game.player1 >> 3:
+                    reward = -0.1
+
             if game.is_game_over():
-                if game.check_win(1): reward = 1
+                if game.check_win(10): reward = 1
                 elif game.is_draw(): reward = 0.5
+                elif game.check_win(20): reward = -1
                 is_game_over = True
 
-                # game.draw_board()
-                # print("game over 1: ", reward)
+                if debug:
+                    print("game over Player1", reward)
             
             agent.update_q_table(state, action, reward, game.get_state())
 
@@ -233,15 +290,20 @@ def train(agent, total_episodes=20000):
             if not is_game_over:
                 opponent_actions = game.get_available_actions(game.player2)
                 if opponent_actions:
-                    opponent_action = random.choice(opponent_actions)
+                    # opponent_action = random.choice(opponent_actions)
+                    opponent_action = oponent_agent.choose_action(game.get_state, opponent_actions)
                     game.make_move(opponent_action, game.player2)
                     
-                    if game.check_win(2):
+                    if debug:
+                        print("P2 action: ", opponent_action)
+                        game.draw_board()
+
+                    if game.check_win(20):
                         agent.update_q_table(state, action, -1, game.get_state())
                         is_game_over = True
-                        # print("game over 2: ")
-
-                    # game.draw_board()
+                        
+                        if debug:
+                            print("game over Player2 win")
             
         agent.decay_exploration_rate(episode, total_episodes)
 
@@ -265,27 +327,43 @@ def play_against_human(agent):
             is_game_over = True
             break
 
-        player_action = str(input('place <p, piece, targ_pos> \nmove <m, orig_pos, target_pos>: '))
-        player_action = player_action.split()
-        
-        game.make_move((player_action[0], int(player_action[1]), int(player_action[2])), game.player2)
+        print(game.get_state())
 
-        if game.check_win(20):
-            print("Human win")
-            is_game_over = True
+        valid_action_p2 = False
+        while not valid_action_p2:
+            player_action = str(input('place <p, piece, targ_pos> \nmove <m, orig_pos, target_pos>: '))
+            player_action = player_action.split()
+            
+            try:
+                valid_action_p2 = game.make_move((player_action[0], int(player_action[1]), int(player_action[2])), game.player2)
 
-        if game.is_draw():
-            print("Draw")
-            is_game_over = True
+                if game.check_win(20):
+                    print("Human win")
+                    is_game_over = True
+                elif game.is_draw():
+                    print("Draw")
+                    is_game_over = True
+                
+                game.draw_board()
+                print(game.get_state())
 
-# # Tente carregar o modelo existente. Se não houver, crie um novo.
-# loaded_q_table = load_model()
-# agent = QLearningAgent(q_table=loaded_q_table)
+            except Exception as e:
+                print("Input error. Try again.\n")
 
-agent = QLearningAgent()
+def train_debug(load=False):
+    if load:
+        loaded_q_table = load_model("q_table-R&AI.pkl")
+        # agent = QLearningAgent(q_table=loaded_q_table)
+        agent = QLearningAgent(learning_rate=0.0001, discount_factor=0.9, exploration_rate=0.5, q_table=loaded_q_table)
+    else:
+        agent = QLearningAgent(learning_rate=0.0001, discount_factor=0.9, exploration_rate=0.5)
+
+    train(agent, total_episodes=1, debug=True)
+
+agent = QLearningAgent(learning_rate=0.0001, discount_factor=0.9, exploration_rate=0.9)
 
 # Treine o agente
-train(agent, total_episodes=10000)
+train(agent, total_episodes=1000000)
 
 # Salve o modelo após o treino
 save_model(agent)
