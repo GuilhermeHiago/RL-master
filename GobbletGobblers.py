@@ -48,9 +48,12 @@ class GlobbletGobblers:
     
     def get_available_actions(self, player):
         # moves from initial placement
-        placement_pos = [i for i, cell in enumerate(self.board) if cell[-1] == 0]
+        # placement_pos = [i for i, cell in enumerate(self.board) if cell[-1] == 0]
 
-        placement_moves = [("p", piece, pos) for piece in set(self.player_pieces[player]) for pos in placement_pos]
+        # placement_moves = [("p", piece, pos) for piece in set(self.player_pieces[player]) for pos in placement_pos]
+
+        # placement including smaller piece covering
+        placement_moves = [("p", piece, pos) for piece in set(self.player_pieces[player]) for pos, cell in enumerate(self.board) if cell[-1] % 10 < piece % 10]
 
         directions = [
             (-1, 0),  # cima
@@ -100,6 +103,8 @@ class GlobbletGobblers:
                         self.board[action[2]].append(action[1])
                         self.player_pieces[player].remove(action[1])
                         return True
+                    
+        print("Falhou movimento")
         return False
 
     def reset(self):
@@ -253,12 +258,12 @@ def play_against_human(agent):
         action = agent.choose_action(state, available_actions)
         game.make_move(action, game.player1)
 
+        game.draw_board()
+
         if game.check_win(10):
             print("AI win")
             is_game_over = True
             break
-
-        game.draw_board()
 
         player_action = str(input('place <p, piece, targ_pos> \nmove <m, orig_pos, target_pos>: '))
         player_action = player_action.split()
