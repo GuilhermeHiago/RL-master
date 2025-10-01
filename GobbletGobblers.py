@@ -209,7 +209,9 @@ class QLearningAgent:
         self.q_table[state][action] = new_q
 
     def decay_exploration_rate(self, episode, total_episodes):
-        self.exploration_rate = self.min_exploration_rate + (1.0 - self.min_exploration_rate) * (0.01 ** (episode / total_episodes))
+        decay_base = 0.99
+        self.exploration_rate = self.min_exploration_rate + (1.0 - self.min_exploration_rate) * (decay_base ** episode)
+        # self.exploration_rate = self.min_exploration_rate + (1.0 - self.min_exploration_rate) * (0.01 ** (episode / total_episodes))
 
 # --- Funções de Salvar e Carregar ---
 def save_model(agent, filename="q_table.pkl"):
@@ -360,10 +362,10 @@ def train_debug(load=False):
 
     train(agent, total_episodes=1, debug=True)
 
-agent = QLearningAgent(learning_rate=0.0001, discount_factor=0.9, exploration_rate=0.9)
+agent = QLearningAgent(learning_rate=0.001, discount_factor=0.5, exploration_rate=0.9)
 
 # Treine o agente
-train(agent, total_episodes=1000000)
+train(agent, total_episodes=100000)
 
 # Salve o modelo após o treino
 save_model(agent)
