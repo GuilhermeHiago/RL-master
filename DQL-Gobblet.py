@@ -42,7 +42,7 @@ class DQNAgent:
         self.gamma = 0.95
         self.epsilon = 1.0
         self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
+        self.epsilon_decay = 0.999
         self.learning_rate = 0.001
 
         # Criar a rede principal (policy_net) e a rede alvo (target_net)
@@ -116,6 +116,18 @@ class DQNAgent:
         # Pegamos apenas os Q-values das ações que foram realmente tomadas
         self.policy_net.train() # Coloca a rede em modo de treinamento
         q_values = self.policy_net(states)
+
+        # Adicione estas linhas para depuração:
+        # print(f"Shape dos Q-values: {q_values.shape}")
+        # print(f"Ações (min/max): {actions.min().item()} / {actions.max().item()}")
+        
+        # Verifique se há alguma ação fora do intervalo válido
+        num_actions = q_values.shape[1]
+        if actions.max().item() >= num_actions or actions.min().item() < 0:
+            print("ERRO: Ações fora do intervalo encontrado!")
+            # Você pode querer inspecionar o tensor inteiro aqui:
+            # print(actions)
+
         current_q_values = q_values.gather(1, actions.unsqueeze(1))
 
         # 2. Calcula os Q-values para os próximos estados usando a target_net
@@ -144,13 +156,11 @@ class DQNAgent:
 env = GlobbletGobblers() # Sua classe de jogo deve gerenciar os turnos
 state_size = 9*4 + 7 # env.board.flatten().shape[0]
 # state_size = env.get_state().shape[0]
-action_size = 3 # env.board.size
+action_size = 126 # env.board.size
 agent = DQNAgent(state_size, action_size) # Nosso agente IA (Jogador 1)
 batch_size = 64
-EPISODES = 5000
+EPISODES = 3000
 UPDATE_TARGET_EVERY = 10
-
-print("aqui")
 
 all_possible_actions = [
     ('p', 11, 0), ('p', 11, 1), ('p', 11, 2), ('p', 11, 3), ('p', 11, 4), ('p', 11, 5), ('p', 11, 6), ('p', 11, 7), ('p', 11, 8),
@@ -201,8 +211,8 @@ for e in range(EPISODES):
         action_tuple_to_execute = int_to_action[chosen_action_index]
         env.make_move(action_tuple_to_execute, env.player1)
 
-        env.draw_board()
-        print()
+        # env.draw_board()
+        # print()
 
         # Verifica se o Agente venceu com esta jogada
         if env.check_win(env.player1):
@@ -259,3 +269,66 @@ for e in range(EPISODES):
     agent.replay(batch_size)
     if e % UPDATE_TARGET_EVERY == 0:
         agent.update_target_net()
+
+
+def play_against_human(agent):
+    game = env
+    game.reset()
+
+    is_game_over = False
+        
+    while not is_game_over:
+        state = game.get_flat_state()
+        state = np.reshape(state, [1, state_size])
+        available_actions = game.get_available_actions(game.player1)
+        
+        # Agent's turn (Player 1)
+        # --- TURNO DO AGENTE (JOGADOR 1) ---
+        # Certifique-se de que é a vez do Jogador 1 (sua classe env deve controlar isso)
+        # if env.current_player == 1:
+        legal_actions_tuples = game.get_available_actions(game.player1)
+
+        # Garante que a ação exista no nosso dicionário (segurança)
+        legal_actions_indices = [action_to_int[action] for action in legal_actions_tuples if action in action_to_int]
+
+        if not legal_actions_indices:
+            # Se não há ações legais para o agente, é um empate ou fim de jogo
+            is_game_over = True
+            print("invalid action of Agent")
+            break
+        else:
+            chosen_action_index = agent.choose_action(state, legal_actions_indices)
+            action_tuple_to_execute = int_to_action[chosen_action_index]
+            game.make_move(action_tuple_to_execute, env.player1)
+
+        game.draw_board()
+
+        if game.check_win(10):
+            print("AI win")
+            is_game_over = True
+            break
+
+        # print(game.get_state())
+
+        valid_action_p2 = False
+        while not valid_action_p2:
+            player_action = str(input('place <p, piece, targ_pos> \nmove <m, orig_pos, target_pos>: '))
+            player_action = player_action.split()
+            
+            try:
+                valid_action_p2 = game.make_move((player_action[0], int(player_action[1]), int(player_action[2])), game.player2)
+
+                if game.check_win(20):
+                    print("Human win")
+                    is_game_over = True
+                elif game.is_draw():
+                    print("Draw")
+                    is_game_over = True
+                
+                game.draw_board()
+                # print(game.get_state())
+
+            except Exception as e:
+                print("Input error. Try again.\n")
+
+play_against_human(agent)
